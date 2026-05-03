@@ -1,0 +1,27 @@
+# Binaries
+use-browser
+*.exe
+
+# Test output
+*.test
+coverage.out
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Session data
+.sessions/
+*.json.bak
+
+# Temp
+/tmp/
+*.log
