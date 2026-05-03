@@ -14,9 +14,6 @@ type Config struct {
 	CDP                string `mapstructure:"cdp"`
 	AutoConnect        bool   `mapstructure:"autoConnect"`
 	ExecutablePath     string `mapstructure:"executablePath"`
-	Profile            string `mapstructure:"profile"`
-	Session            string `mapstructure:"session"`
-	SessionName        string `mapstructure:"sessionName"`
 	State              string `mapstructure:"state"`
 	Proxy              string `mapstructure:"proxy"`
 	ProxyBypass        string `mapstructure:"proxyBypass"`
@@ -54,7 +51,7 @@ func Load(configPath string) (*Config, error) {
 	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	v.AutomaticEnv()
 
-	v.SetDefault("headed", false)
+	v.SetDefault("headed", true)
 	v.SetDefault("autoConnect", false)
 	v.SetDefault("ignoreHttpsErrors", false)
 	v.SetDefault("allowFileAccess", false)

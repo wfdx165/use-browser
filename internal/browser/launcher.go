@@ -1,29 +1,31 @@
 package browser
 
 import (
-	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
-	"io"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/wfdx165/use-browser/internal/config"
 )
 
 type Launcher struct {
-	config   *config.Config
-	cmd      *exec.Cmd
-	cdpURL   string
-	tempDir  string
-	pidFile  string
-	mu       sync.Mutex
+	config      *config.Config
+	cmd         *exec.Cmd
+	cdpURL      string
+	cdpPort     int
+	mu          sync.Mutex
+	userDataDir string
 }
 
 func NewLauncher(cfg *config.Config) *Launcher {
@@ -36,77 +38,87 @@ func (l *Launcher) Launch(ctx context.Context) (cdpURL string, err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	if l.config.Session != "" {
-		l.tempDir = filepath.Join(config.DefaultConfigDir(), "tmp", l.config.Session)
-	} else {
-		l.tempDir, err = os.MkdirTemp("", "use-browser-*")
+	if savedPID, savedCDP, err := l.loadState(); err == nil {
+		if processAlive(savedPID) && cdpReachable(savedCDP) {
+			l.cdpURL = savedCDP
+			return savedCDP, nil
+		}
+		l.removeState()
 	}
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp dir: %w", err)
-	}
-
-	args := l.buildArgs()
 
 	execPath, err := l.resolveExecPath()
 	if err != nil {
 		return "", err
 	}
 
-	l.cmd = exec.CommandContext(ctx, execPath, args...)
-
-	stderrPipe, err := l.cmd.StderrPipe()
+	userDataDir, err := os.MkdirTemp("", "use-browser-*")
 	if err != nil {
-		return "", fmt.Errorf("failed to create stderr pipe: %w", err)
+		return "", fmt.Errorf("failed to create user data dir: %w", err)
 	}
+	l.userDataDir = userDataDir
+
+	l.cdpPort, err = freePort()
+	if err != nil {
+		return "", fmt.Errorf("failed to choose remote debugging port: %w", err)
+	}
+
+	args := l.buildArgs()
+
+	l.killExistingChrome()
+
+	l.cmd = exec.Command(execPath, args...)
 
 	if err := l.cmd.Start(); err != nil {
 		return "", fmt.Errorf("failed to start chrome: %w", err)
 	}
 
-	if l.config.Session != "" {
-		pidDir := filepath.Join(config.DefaultConfigDir(), "pids")
-		os.MkdirAll(pidDir, 0755)
-		l.pidFile = filepath.Join(pidDir, l.config.Session+".pid")
-		os.WriteFile(l.pidFile, []byte(fmt.Sprintf("%d", l.cmd.Process.Pid)), 0644)
-	}
-
-	cdpURL, err = l.waitForCDPFromStderr(ctx, stderrPipe)
+	cdpURL, err = l.waitForCDPFromPort(ctx, l.cdpPort)
 	if err != nil {
 		l.cmd.Process.Kill()
 		return "", err
 	}
 
 	l.cdpURL = cdpURL
+	l.saveState(l.cmd.Process.Pid, cdpURL)
 	return cdpURL, nil
 }
 
+func (l *Launcher) killExistingChrome() {
+	switch runtime.GOOS {
+	case "darwin":
+		exec.Command("killall", "-9", "Google Chrome", "Chrome").Run()
+	case "linux":
+		exec.Command("pkill", "-9", "chrome").Run()
+		exec.Command("pkill", "-9", "chromium").Run()
+	case "windows":
+		exec.Command("taskkill", "/F", "/IM", "chrome.exe").Run()
+	}
+
+	time.Sleep(500 * time.Millisecond)
+}
+
 func (l *Launcher) Close() error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	if l.pidFile != "" {
-		os.Remove(l.pidFile)
-	}
-
+	l.removeState()
 	if l.cmd != nil && l.cmd.Process != nil {
-		l.cmd.Process.Signal(os.Interrupt)
-		done := make(chan struct{})
-		go func() {
-			l.cmd.Wait()
-			close(done)
-		}()
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			l.cmd.Process.Kill()
-		}
+		l.cmd.Process.Kill()
+		l.cmd.Wait()
 	}
-
-	if l.tempDir != "" {
-		os.RemoveAll(l.tempDir)
+	if l.userDataDir != "" {
+		os.RemoveAll(l.userDataDir)
 	}
-
 	return nil
+}
+
+func (l *Launcher) SavedCDPURL() (string, bool) {
+	savedPID, savedCDP, err := l.loadState()
+	if err != nil {
+		return "", false
+	}
+	if processAlive(savedPID) && cdpReachable(savedCDP) {
+		return savedCDP, true
+	}
+	l.removeState()
+	return "", false
 }
 
 func (l *Launcher) PID() int {
@@ -122,7 +134,8 @@ func (l *Launcher) CDPURL() string {
 
 func (l *Launcher) buildArgs() []string {
 	args := []string{
-		"--remote-debugging-port=0",
+		fmt.Sprintf("--remote-debugging-port=%d", l.cdpPort),
+		fmt.Sprintf("--user-data-dir=%s", l.userDataDir),
 		"--disable-background-tab-crashing",
 		"--disable-default-apps",
 		"--disable-extensions",
@@ -153,12 +166,6 @@ func (l *Launcher) buildArgs() []string {
 		args = append(args, "--proxy-server="+l.config.Proxy)
 	}
 
-	if l.config.Profile != "" {
-		args = append(args, "--user-data-dir="+l.config.Profile)
-	} else if l.tempDir != "" {
-		args = append(args, "--user-data-dir="+l.tempDir)
-	}
-
 	return args
 }
 
@@ -174,33 +181,24 @@ func (l *Launcher) resolveExecPath() (string, error) {
 	return "", fmt.Errorf("chrome not found, specify --executable-path")
 }
 
-var wsURLPattern = regexp.MustCompile(`ws://[^\s]+`)
-
-func (l *Launcher) waitForCDPFromStderr(ctx context.Context, stderrPipe io.ReadCloser) (string, error) {
+func (l *Launcher) waitForCDPFromPort(ctx context.Context, port int) (string, error) {
 	timeout := time.Duration(l.config.DefaultTimeout) * time.Millisecond
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	scanner := bufio.NewScanner(stderrPipe)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.Contains(line, "DevTools listening on") {
-			urls := wsURLPattern.FindAllString(line, -1)
-			if len(urls) > 0 {
-				return urls[0], nil
-			}
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		if cdpURL, ok := cdpURLForPort(ctx, port); ok {
+			return cdpURL, nil
 		}
-	}
 
-	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("error reading chrome stderr: %w", err)
-	}
-
-	select {
-	case <-ctx.Done():
-		return "", fmt.Errorf("timed out waiting for chrome CDP")
-	default:
-		return "", fmt.Errorf("chrome closed without providing CDP URL")
+		select {
+		case <-ctx.Done():
+			return "", fmt.Errorf("timed out waiting for chrome CDP")
+		case <-ticker.C:
+		}
 	}
 }
 
@@ -256,4 +254,119 @@ func findSystemChrome() string {
 	}
 
 	return ""
+}
+
+func (l *Launcher) saveState(pid int, cdpURL string) error {
+	pidDir := filepath.Join(config.DefaultConfigDir(), "pids")
+	os.MkdirAll(pidDir, 0755)
+
+	os.WriteFile(filepath.Join(pidDir, "default.pid"), []byte(fmt.Sprintf("%d", pid)), 0644)
+	os.WriteFile(filepath.Join(pidDir, "default.cdp"), []byte(cdpURL), 0644)
+	return nil
+}
+
+func (l *Launcher) loadState() (pid int, cdpURL string, err error) {
+	pidDir := filepath.Join(config.DefaultConfigDir(), "pids")
+
+	data, err := os.ReadFile(filepath.Join(pidDir, "default.pid"))
+	if err != nil {
+		return 0, "", err
+	}
+	fmt.Sscanf(strings.TrimSpace(string(data)), "%d", &pid)
+
+	cdpData, err := os.ReadFile(filepath.Join(pidDir, "default.cdp"))
+	if err != nil {
+		return 0, "", err
+	}
+
+	return pid, strings.TrimSpace(string(cdpData)), nil
+}
+
+func (l *Launcher) removeState() {
+	pidDir := filepath.Join(config.DefaultConfigDir(), "pids")
+	os.Remove(filepath.Join(pidDir, "default.pid"))
+	os.Remove(filepath.Join(pidDir, "default.cdp"))
+}
+
+func processAlive(pid int) bool {
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	switch runtime.GOOS {
+	case "windows":
+		err = process.Signal(nil)
+	default:
+		err = process.Signal(syscall.Signal(0))
+	}
+	return err == nil
+}
+
+func cdpReachable(cdpURL string) bool {
+	parsed, err := url.Parse(cdpURL)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+
+	scheme := "http"
+	if parsed.Scheme == "wss" {
+		scheme = "https"
+	}
+	versionURL := url.URL{Scheme: scheme, Host: parsed.Host, Path: "/json/version"}
+
+	client := &http.Client{Timeout: 500 * time.Millisecond}
+	resp, err := client.Get(versionURL.String())
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return false
+	}
+
+	var info map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return false
+	}
+	wsURL, _ := info["webSocketDebuggerUrl"].(string)
+	return wsURL != ""
+}
+
+func freePort() (int, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer listener.Close()
+
+	addr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		return 0, fmt.Errorf("unexpected listener address %s", listener.Addr())
+	}
+	return addr.Port, nil
+}
+
+func cdpURLForPort(ctx context.Context, port int) (string, bool) {
+	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://127.0.0.1:%d/json/version", port), nil)
+	if err != nil {
+		return "", false
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", false
+	}
+
+	var info map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return "", false
+	}
+	wsURL, _ := info["webSocketDebuggerUrl"].(string)
+	return wsURL, wsURL != ""
 }

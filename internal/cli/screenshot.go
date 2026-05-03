@@ -28,6 +28,7 @@ var screenshotCmd = &cobra.Command{
 Examples:
   use-browser screenshot                       # Save to temp dir as PNG
   use-browser screenshot page.png              # Save as PNG
+  use-browser screenshot -                     # Output binary to stdout
   use-browser screenshot --full                # Full-page screenshot
   use-browser screenshot --format jpeg --quality 80
   use-browser screenshot --screenshot-dir ./shots`,
@@ -95,6 +96,11 @@ func runScreenshot(cmd *cobra.Command, args []string) error {
 	outputPath := ""
 	if len(args) > 0 {
 		outputPath = args[0]
+	}
+
+	if outputPath == "-" {
+		_, err := os.Stdout.Write(buf)
+		return err
 	}
 
 	if outputPath == "" {

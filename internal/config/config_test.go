@@ -22,8 +22,8 @@ func TestLoadDefaults(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	if cfg.Headed {
-		t.Error("expected Headed default to be false")
+	if !cfg.Headed {
+		t.Error("expected Headed default to be true")
 	}
 	if cfg.AutoConnect {
 		t.Error("expected AutoConnect default to be false")

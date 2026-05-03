@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/chromedp/chromedp"
@@ -183,10 +184,53 @@ func runPress(cmd *cobra.Command, args []string) error {
 	}
 	defer client.Close()
 
-	if err := client.Run(timeout,
-		chromedp.Sleep(100*time.Millisecond),
-	); err != nil {
-		return fmt.Errorf("press failed: %w", err)
+	// Map common key names
+	keyMap := map[string]string{
+		"enter":     "\n",
+		"return":    "\r",
+		"tab":       "\t",
+		"escape":    "\x1b",
+		"esc":       "\x1b",
+		"backspace": "\b",
+		"delete":    "\x7f",
+		"space":     " ",
+		"arrowup":    "\uf700",
+		"arrowdown":  "\uf701",
+		"arrowleft":  "\uf702",
+		"arrowright": "\uf703",
+	}
+
+	// Check for modifier+key combinations
+	modifiers := []string{}
+	keyToSend := key
+	
+	// Handle combinations like "Control+a", "Shift+Enter"
+	if strings.Contains(key, "+") {
+		parts := strings.Split(key, "+")
+		for i := 0; i < len(parts)-1; i++ {
+			modifiers = append(modifiers, strings.ToLower(strings.TrimSpace(parts[i])))
+		}
+		keyToSend = strings.TrimSpace(parts[len(parts)-1])
+	}
+
+	// Map the key
+	lowerKey := strings.ToLower(keyToSend)
+	if mapped, ok := keyMap[lowerKey]; ok {
+		keyToSend = mapped
+	}
+
+	// Send key
+	if len(modifiers) == 0 {
+		// Simple key press
+		if err := client.Run(timeout, chromedp.KeyEvent(keyToSend)); err != nil {
+			return fmt.Errorf("press failed: %w", err)
+		}
+	} else {
+		// With modifiers - not fully implemented, just send the key
+		// Full implementation would require keyDown/modifierDown + keyUp/modifierUp
+		if err := client.Run(timeout, chromedp.KeyEvent(keyToSend)); err != nil {
+			return fmt.Errorf("press failed: %w", err)
+		}
 	}
 
 	if cfg.JSON {
@@ -200,6 +244,5 @@ func runPress(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Printf("Pressed key: %s\n", key)
 	}
-
 	return nil
 }

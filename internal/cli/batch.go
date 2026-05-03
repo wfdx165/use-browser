@@ -60,9 +60,19 @@ func runBatch(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Executing %d commands:\n", len(commands))
 	for i, parts := range commands {
 		fmt.Printf("  [%d] %s\n", i+1, strings.Join(parts, " "))
-		if batchBail {
-			break
+		
+		// Execute the command by setting args and calling ExecuteC
+		rootCmd.SetArgs(parts)
+		_, err := rootCmd.ExecuteC()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Command [%d] failed: %v\n", i+1, err)
+			if batchBail {
+				return fmt.Errorf("batch execution stopped at step %d", i+1)
+			}
 		}
+		
+		// Reset args for next iteration
+		rootCmd.SetArgs([]string{})
 	}
 
 	fmt.Println("Batch complete")

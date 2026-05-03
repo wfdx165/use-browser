@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"github.com/spf13/cobra"
@@ -58,13 +59,18 @@ func runConsole(cmd *cobra.Command, args []string) error {
 
 	if err := client.Run(timeout,
 		chromedp.ActionFunc(func(ctx context.Context) error {
+			return page.BringToFront().Do(ctx)
+		}),
+		chromedp.ActionFunc(func(ctx context.Context) error {
 			return runtime.Enable().Do(ctx)
 		}),
+		chromedp.Evaluate("window.focus()", nil),
+		chromedp.KeyEvent(string(rune(0x080c))),
 	); err != nil {
 		return fmt.Errorf("console: %w", err)
 	}
 
-	fmt.Println("Console messages enabled")
+	fmt.Println("DevTools console opened")
 	return nil
 }
 

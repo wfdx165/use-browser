@@ -1,6 +1,6 @@
 module github.com/wfdx165/use-browser
 
-go 1.26
+go 1.22
 
 require (
 	github.com/chromedp/chromedp v0.9.5

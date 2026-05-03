@@ -50,20 +50,14 @@ func applyFlagOverrides(cmd *cobra.Command, args []string) error {
 	if cfgAutoConnect {
 		cfg.AutoConnect = cfgAutoConnect
 	}
+	if cfgHeadless {
+		cfg.Headed = false
+	}
 	if cfgHeaded {
 		cfg.Headed = cfgHeaded
 	}
 	if cfgExecutablePath != "" {
 		cfg.ExecutablePath = cfgExecutablePath
-	}
-	if cfgProfile != "" {
-		cfg.Profile = cfgProfile
-	}
-	if cfgSession != "" {
-		cfg.Session = cfgSession
-	}
-	if cfgSessionName != "" {
-		cfg.SessionName = cfgSessionName
 	}
 	if cfgState != "" {
 		cfg.State = cfgState
@@ -114,11 +108,9 @@ func applyFlagOverrides(cmd *cobra.Command, args []string) error {
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgCDP, "cdp", "", "CDP port or WebSocket URL")
 	rootCmd.PersistentFlags().BoolVar(&cfgAutoConnect, "auto-connect", false, "Auto-discover running Chrome")
-	rootCmd.PersistentFlags().BoolVar(&cfgHeaded, "headed", false, "Show browser window")
+	rootCmd.PersistentFlags().BoolVar(&cfgHeaded, "headed", false, "Show browser window (default: true)")
+	rootCmd.PersistentFlags().BoolVar(&cfgHeadless, "headless", false, "Run browser in headless mode")
 	rootCmd.PersistentFlags().StringVar(&cfgExecutablePath, "executable-path", "", "Custom Chrome executable path")
-	rootCmd.PersistentFlags().StringVar(&cfgProfile, "profile", "", "Chrome profile name or path")
-	rootCmd.PersistentFlags().StringVar(&cfgSession, "session", "", "Session name")
-	rootCmd.PersistentFlags().StringVar(&cfgSessionName, "session-name", "", "Auto-save/restore session state")
 	rootCmd.PersistentFlags().StringVar(&cfgState, "state", "", "Load storage state from JSON file")
 	rootCmd.PersistentFlags().StringVar(&cfgProxy, "proxy", "", "Proxy server URL")
 	rootCmd.PersistentFlags().BoolVar(&cfgIgnoreHTTPS, "ignore-https-errors", false, "Ignore HTTPS certificate errors")
@@ -142,10 +134,8 @@ var (
 	cfgCDP              string
 	cfgAutoConnect      bool
 	cfgHeaded           bool
+	cfgHeadless         bool
 	cfgExecutablePath   string
-	cfgProfile          string
-	cfgSession          string
-	cfgSessionName      string
 	cfgState            string
 	cfgProxy            string
 	cfgIgnoreHTTPS      bool

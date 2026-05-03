@@ -3,6 +3,7 @@ package browser
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/wfdx165/use-browser/internal/config"
 )
@@ -45,6 +46,22 @@ func (m *Manager) Start(ctx context.Context) error {
 	}
 
 	m.launcher = NewLauncher(m.config)
+	if cdpURL, ok := m.launcher.SavedCDPURL(); ok {
+		m.cdpURL = cdpURL
+		return nil
+	}
+
+	results, err := DiscoverChrome()
+	if err == nil && len(results) > 0 {
+		result := results[0]
+		m.config.CDP = result.WebSocket
+		m.connector = NewConnector(m.config)
+		m.cdpURL = result.WebSocket
+		return nil
+	}
+
+	fmt.Fprintln(os.Stderr, "WARN: Could not find running Chrome with debugging port. Starting a new browser instance. To reuse your current Chrome, restart it with --remote-debugging-port=9222.")
+
 	cdpURL, err := m.launcher.Launch(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to launch chrome: %w", err)
@@ -58,9 +75,6 @@ func (m *Manager) CDPURL() string {
 }
 
 func (m *Manager) Close() error {
-	if m.launcher != nil {
-		return m.launcher.Close()
-	}
 	return nil
 }
 

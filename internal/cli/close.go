@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -11,57 +12,20 @@ import (
 	"github.com/wfdx165/use-browser/internal/config"
 )
 
-var closeAll bool
-
 var closeCmd = &cobra.Command{
 	Use:     "close",
 	Aliases: []string{"quit", "exit"},
 	Short:   "Close browser",
-	Long: `Close the browser instance.
-If --session flag is set, closes only that session's browser.
-If --all flag is set, closes all session browsers.`,
+	Long: `Close the browser instance.`,
 	RunE: runClose,
 }
 
 func init() {
-	closeCmd.Flags().BoolVar(&closeAll, "all", false, "Close all active sessions")
 	rootCmd.AddCommand(closeCmd)
 }
 
 func runClose(cmd *cobra.Command, args []string) error {
-	configDir := config.DefaultConfigDir()
-	pidDir := filepath.Join(configDir, "pids")
-
-	if closeAll {
-		entries, err := os.ReadDir(pidDir)
-		if err != nil {
-			if os.IsNotExist(err) {
-				fmt.Println("No active sessions")
-				return nil
-			}
-			return fmt.Errorf("failed to read pid directory: %w", err)
-		}
-
-		for _, entry := range entries {
-			if err := killSession(filepath.Join(pidDir, entry.Name())); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to close session %s: %v\n", entry.Name(), err)
-			}
-		}
-		fmt.Println("All sessions closed")
-		return nil
-	}
-
-	sessionName := ""
-	if cfg != nil && cfg.Session != "" {
-		sessionName = cfg.Session
-	}
-
-	if sessionName == "" {
-		sessionName = "default"
-	}
-
-	pidFile := filepath.Join(pidDir, sessionName+".pid")
-	if err := killSession(pidFile); err != nil {
+	if err := killSession(); err != nil {
 		return err
 	}
 
@@ -69,7 +33,12 @@ func runClose(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func killSession(pidFile string) error {
+func killSession() error {
+	configDir := config.DefaultConfigDir()
+	pidDir := filepath.Join(configDir, "pids")
+
+	pidFile := filepath.Join(pidDir, "default.pid")
+
 	data, err := os.ReadFile(pidFile)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -79,7 +48,7 @@ func killSession(pidFile string) error {
 	}
 
 	var pid int
-	if _, err := fmt.Sscanf(string(data), "%d", &pid); err != nil {
+	if _, err := fmt.Sscanf(strings.TrimSpace(string(data)), "%d", &pid); err != nil {
 		return fmt.Errorf("failed to parse pid from %s: %w", pidFile, err)
 	}
 
@@ -98,11 +67,12 @@ func killSession(pidFile string) error {
 
 	select {
 	case <-done:
-		os.Remove(pidFile)
-		return nil
 	case <-time.After(5 * time.Second):
 		process.Kill()
-		os.Remove(pidFile)
-		return nil
 	}
+
+	os.Remove(pidFile)
+	os.Remove(filepath.Join(pidDir, "default.cdp"))
+
+	return nil
 }
