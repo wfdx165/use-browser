@@ -20,6 +20,48 @@ cd use-browser
 go build -o use-browser ./cmd/browser
 ```
 
+## Building
+
+Build for all platforms using the included `build.sh` script:
+
+```bash
+# Build all platforms (Linux, macOS, Windows)
+./build.sh
+
+# Build specific platform
+./build.sh linux-amd64     # Linux x86_64
+./build.sh linux-arm64     # Linux ARM64
+./build.sh darwin-amd64    # macOS Intel
+./build.sh darwin-arm64    # macOS Apple Silicon
+./build.sh windows-amd64   # Windows x86_64
+
+# Other commands
+./build.sh --clean         # Remove build artifacts
+./build.sh --version       # Show version info
+./build.sh --help          # Show all available options
+```
+
+**Version Auto-Increment**: The script automatically detects the latest Git tag and increments the patch version. For example, if the latest tag is `v0.1.0`, it will build `v0.1.1`.
+
+**Create Git Tag after Build**:
+```bash
+./build.sh --tag           # Build all and create git tag vX.X.X
+```
+
+Build artifacts are placed in `dist/`:
+- `use-browser-v0.1.1-linux-amd64.tar.gz`
+- `use-browser-v0.1.1-linux-arm64.tar.gz`
+- `use-browser-v0.1.1-darwin-amd64.tar.gz`
+- `use-browser-v0.1.1-darwin-arm64.tar.gz`
+- `use-browser-v0.1.1-windows-amd64.zip`
+- `checksums.txt` (SHA256)
+
+Each archive contains:
+- Directory: `use-browser-v0.1.1-{platform}/`
+- Executable: `use-browser` (Linux/macOS) or `use-browser.exe` (Windows)
+- `LICENSE`
+- `README.md`
+
 ## Requirements
 
 - Go 1.26+

@@ -18,6 +18,48 @@ cd use-browser
 go build -o use-browser ./cmd/browser
 ```
 
+## 构建
+
+使用附带的 `build.sh` 脚本为所有平台构建：
+
+```bash
+# 构建所有平台（Linux、macOS、Windows）
+./build.sh
+
+# 构建特定平台
+./build.sh linux-amd64     # Linux x86_64
+./build.sh linux-arm64     # Linux ARM64
+./build.sh darwin-amd64    # macOS Intel
+./build.sh darwin-arm64    # macOS Apple Silicon
+./build.sh windows-amd64   # Windows x86_64
+
+# 其他命令
+./build.sh --clean         # 移除构建产物
+./build.sh --version       # 显示版本信息
+./build.sh --help          # 显示所有可用选项
+```
+
+**版本号自动递增**：脚本会自动检测最新的 Git tag 并递增 patch 版本。例如，如果最新 tag 是 `v0.1.0`，它将构建 `v0.1.1`。
+
+**构建后创建 Git Tag**：
+```bash
+./build.sh --tag           # 构建所有平台并创建 git tag vX.X.X
+```
+
+构建产物位于 `dist/` 目录：
+- `use-browser-v0.1.1-linux-amd64.tar.gz`
+- `use-browser-v0.1.1-linux-arm64.tar.gz`
+- `use-browser-v0.1.1-darwin-amd64.tar.gz`
+- `use-browser-v0.1.1-darwin-arm64.tar.gz`
+- `use-browser-v0.1.1-windows-amd64.zip`
+- `checksums.txt` (SHA256 校验和)
+
+每个包包含：
+- 目录：`use-browser-v0.1.1-{platform}/`
+- 可执行文件：`use-browser`（Linux/macOS）或 `use-browser.exe`（Windows）
+- `LICENSE`
+- `README.md`
+
 ## 环境要求
 
 - Go 1.26+
