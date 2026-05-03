@@ -17,13 +17,19 @@ func TestDefaultConfigDir(t *testing.T) {
 }
 
 func TestLoadDefaults(t *testing.T) {
+	// Clear environment variables to test defaults
+	for _, key := range []string{"USE_BROWSER_HEADED", "USE_BROWSER_JSON", "USE_BROWSER_DEFAULTTIMEOUT", "USE_BROWSER_SCREENSHOTFORMAT", "USE_BROWSER_SCREENSHOTQUALITY"} {
+		os.Unsetenv(key)
+	}
+
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
 
+	// Always headed (no headless mode)
 	if !cfg.Headed {
-		t.Error("expected Headed default to be true")
+		t.Error("expected Headed default to be true (forced headed mode)")
 	}
 	if cfg.AutoConnect {
 		t.Error("expected AutoConnect default to be false")
@@ -45,34 +51,32 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
-func TestLoadFromTempFile(t *testing.T) {
-	tmpDir := t.TempDir()
-	configFile := filepath.Join(tmpDir, "use-browser.json")
-
-	configContent := `{
-		"headed": true,
-		"json": true,
-		"defaultTimeout": 60000,
-		"userAgent": "test-agent/1.0",
-		"proxy": "http://localhost:8080"
-	}`
-	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
-		t.Fatalf("failed to write temp config: %v", err)
+func TestEnvOverride(t *testing.T) {
+	// Clear any existing env vars
+	for _, key := range []string{"USE_BROWSER_JSON", "USE_BROWSER_DEFAULTTIMEOUT", "USE_BROWSER_USERAGENT", "USE_BROWSER_PROXY"} {
+		os.Unsetenv(key)
 	}
 
-	cfg, err := Load(configFile)
+	// Set environment variables
+	t.Setenv("USE_BROWSER_JSON", "true")
+	t.Setenv("USE_BROWSER_DEFAULTTIMEOUT", "10000")
+	t.Setenv("USE_BROWSER_USERAGENT", "test-agent/1.0")
+	t.Setenv("USE_BROWSER_PROXY", "http://localhost:8080")
+
+	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
 
+	// Headed is always true (forced)
 	if !cfg.Headed {
-		t.Error("expected Headed to be true from config file")
+		t.Error("expected Headed to be true (forced headed mode)")
 	}
 	if !cfg.JSON {
-		t.Error("expected JSON to be true from config file")
+		t.Error("expected JSON to be true from env")
 	}
-	if cfg.DefaultTimeout != 60000 {
-		t.Errorf("expected DefaultTimeout to be 60000, got %d", cfg.DefaultTimeout)
+	if cfg.DefaultTimeout != 10000 {
+		t.Errorf("expected DefaultTimeout to be 10000, got %d", cfg.DefaultTimeout)
 	}
 	if cfg.UserAgent != "test-agent/1.0" {
 		t.Errorf("expected UserAgent to be test-agent/1.0, got %s", cfg.UserAgent)
@@ -82,34 +86,43 @@ func TestLoadFromTempFile(t *testing.T) {
 	}
 }
 
-func TestLoadNonExistentFile(t *testing.T) {
-	_, err := Load("/nonexistent/path/config.json")
-	if err != nil {
-		t.Logf("Load returned error (viper behavior may vary): %v", err)
-	}
-}
+func TestHeadedAlwaysTrue(t *testing.T) {
+	// Clear any existing env vars
+	os.Unsetenv("USE_BROWSER_HEADED")
 
-func TestEnvOverride(t *testing.T) {
-	tmpDir := t.TempDir()
-	configFile := filepath.Join(tmpDir, "use-browser.json")
-	os.WriteFile(configFile, []byte(`{}`), 0644)
+	// Try to set headed to false via environment (should be ignored)
+	t.Setenv("USE_BROWSER_HEADED", "false")
 
-	t.Setenv("USE_BROWSER_HEADED", "true")
-	t.Setenv("USE_BROWSER_JSON", "true")
-	t.Setenv("USE_BROWSER_DEFAULTTIMEOUT", "10000")
-
-	cfg, err := Load(configFile)
+	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
 
+	// Headed should always be true regardless of env setting
 	if !cfg.Headed {
-		t.Error("expected Headed to be true from env")
+		t.Error("expected Headed to always be true (forced headed mode)")
 	}
-	if !cfg.JSON {
-		t.Error("expected JSON to be true from env")
+}
+
+func TestCDPAndExecutablePathFromEnv(t *testing.T) {
+	// Clear any existing env vars
+	for _, key := range []string{"USE_BROWSER_CDP", "USE_BROWSER_EXECUTABLEPATH"} {
+		os.Unsetenv(key)
 	}
-	if cfg.DefaultTimeout != 10000 {
-		t.Logf("DefaultTimeout from env: %d (viper env binding may require explicit binding)", cfg.DefaultTimeout)
+
+	// Set environment variables
+	t.Setenv("USE_BROWSER_CDP", "9222")
+	t.Setenv("USE_BROWSER_EXECUTABLEPATH", "/custom/browser/path")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.CDP != "9222" {
+		t.Errorf("expected CDP to be 9222, got %s", cfg.CDP)
+	}
+	if cfg.ExecutablePath != "/custom/browser/path" {
+		t.Errorf("expected ExecutablePath to be /custom/browser/path, got %s", cfg.ExecutablePath)
 	}
 }

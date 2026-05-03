@@ -53,7 +53,7 @@ func (c *Connector) Connect(ctx context.Context) (string, error) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to connect to chrome at %s: %w", httpURL, err)
+		return "", fmt.Errorf("failed to connect to browser at %s: %w", httpURL, err)
 	}
 	defer resp.Body.Close()
 

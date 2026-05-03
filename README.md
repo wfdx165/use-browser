@@ -2,7 +2,9 @@
 
 Browser automation CLI for AI agents, written in Go.
 
-Connects to an existing Chrome browser via Chrome DevTools Protocol (CDP) or launches a new one automatically.
+Connects to an existing browser via Chrome DevTools Protocol (CDP) or launches a new one automatically. Supports Chrome, Edge, Brave, Opera, Vivaldi, Chromium, and Arc.
+
+[中文文档](README_zh.md)
 
 ## Installation
 
@@ -20,8 +22,15 @@ go build -o use-browser ./cmd/browser
 
 ## Requirements
 
-- Go 1.22+
-- Google Chrome or Chromium (auto-detected from common paths)
+- Go 1.26+
+- Any CDP-compatible browser (auto-detected):
+  - Google Chrome
+  - Microsoft Edge
+  - Brave Browser
+  - Opera
+  - Vivaldi
+  - Chromium
+  - Arc (macOS)
 
 ## Quick Start
 
@@ -33,7 +42,7 @@ use-browser fill "#search" "hello"     # Fill input
 use-browser screenshot page.png        # Save screenshot
 use-browser screenshot - | base64      # Output binary to stdout
 use-browser tab new https://google.com # Open new tab
-use-browser console                    # Open DevTools console (headed)
+use-browser console                    # Open DevTools console
 use-browser find role button click     # Find by semantic locator
 use-browser is visible "#submit"       # Check element state
 use-browser keyboard type "hello"      # Type without selector
@@ -42,20 +51,20 @@ use-browser batch "open url" "click"   # Batch execution
 
 ## Browser Persistence
 
-By default, `use-browser` keeps the Chrome instance running after the command exits. The next command will automatically reconnect to the same browser instead of launching a new one. Chrome state (PID and CDP URL) is saved to `~/.use-browser/pids/`.
+By default, `use-browser` keeps the browser instance running after the command exits. The next command will automatically reconnect to the same browser instead of launching a new one. Browser state (PID and CDP URL) is saved to `~/.use-browser/pids/`.
 
 ```bash
-# First run: starts Chrome
+# First run: starts browser
 use-browser open https://example.com
 
-# Second run: reconnects to the same Chrome
+# Second run: reconnects to the same browser
 use-browser snapshot
 
 # To manually stop the browser:
-killall "Google Chrome"
+killall "Google Chrome"  # or your browser name
 ```
 
-Each new Chrome instance uses a temporary user-data directory (`/tmp/use-browser-*`) to avoid profile lock conflicts.
+Each new browser instance uses a temporary user-data directory (`/tmp/use-browser-*`) to avoid profile lock conflicts.
 
 ## Commands
 
@@ -147,34 +156,35 @@ Each new Chrome instance uses a temporary user-data directory (`/tmp/use-browser
 | `batch "cmd1" "cmd2"` | Batch execution |
 | `set viewport <w> <h>` | Set viewport |
 | `set offline on\|off` | Toggle offline |
-| `console` | Open DevTools console (F12) in headed mode |
+| `console` | Open DevTools console (F12) |
 
 ## Options
 
+Configuration is done via **CLI flags** or **environment variables** (no config files).
+
 | Flag | Env | Description |
 |------|-----|-------------|
-| `--cdp <port\|url>` | `USE_BROWSER_CDP` | Connect via CDP |
-| `--auto-connect` | `USE_BROWSER_AUTO_CONNECT` | Auto-discover Chrome |
-| `--headed` | `USE_BROWSER_HEADED` | Show browser window |
-| `--executable-path` | `USE_BROWSER_EXECUTABLE_PATH` | Custom Chrome path |
+| `--cdp <port\|url>` | `USE_BROWSER_CDP` | Connect via CDP port or WebSocket URL |
+| `--auto-connect` | `USE_BROWSER_AUTO_CONNECT` | Auto-discover running browser |
+| `--executable-path` | `USE_BROWSER_EXECUTABLE_PATH` | Custom browser executable path |
 | `--proxy` | `USE_BROWSER_PROXY` | Proxy server |
-| `--user-agent` | `USE_BROWSER_USER_AGENT` | Custom UA |
+| `--user-agent` | `USE_BROWSER_USER_AGENT` | Custom User-Agent |
 | `--json` | — | JSON output |
-| `--config` | `USE_BROWSER_CONFIG` | Config file path |
 
-## Configuration
+### Environment Variable Examples
 
-Create `~/.use-browser/config.json` or `./use-browser.json`:
+```bash
+# Connect to existing browser via CDP
+USE_BROWSER_CDP=9222 use-browser open https://example.com
 
-```json
-{
-  "headed": true,
-  "executablePath": "/path/to/chrome",
-  "proxy": "http://localhost:8080"
-}
+# Use specific browser
+USE_BROWSER_EXECUTABLE_PATH=/usr/bin/brave use-browser open https://example.com
+
+# Multiple options
+USE_BROWSER_CDP=9222 USE_BROWSER_PROXY=http://localhost:8080 use-browser open https://example.com
 ```
 
-Priority: CLI flags > env vars > project config > user config > defaults.
+Priority: CLI flags > Environment variables > Defaults
 
 ## License
 

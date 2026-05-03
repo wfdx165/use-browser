@@ -64,12 +64,12 @@ func (l *Launcher) Launch(ctx context.Context) (cdpURL string, err error) {
 
 	args := l.buildArgs()
 
-	l.killExistingChrome()
+	l.killExistingBrowser()
 
 	l.cmd = exec.Command(execPath, args...)
 
 	if err := l.cmd.Start(); err != nil {
-		return "", fmt.Errorf("failed to start chrome: %w", err)
+		return "", fmt.Errorf("failed to start browser: %w", err)
 	}
 
 	cdpURL, err = l.waitForCDPFromPort(ctx, l.cdpPort)
@@ -83,15 +83,47 @@ func (l *Launcher) Launch(ctx context.Context) (cdpURL string, err error) {
 	return cdpURL, nil
 }
 
-func (l *Launcher) killExistingChrome() {
-	switch runtime.GOOS {
-	case "darwin":
-		exec.Command("killall", "-9", "Google Chrome", "Chrome").Run()
-	case "linux":
-		exec.Command("pkill", "-9", "chrome").Run()
-		exec.Command("pkill", "-9", "chromium").Run()
-	case "windows":
-		exec.Command("taskkill", "/F", "/IM", "chrome.exe").Run()
+func (l *Launcher) killExistingBrowser() {
+	// Define process names for different CDP-compatible browsers
+	processNames := map[string][]string{
+		"darwin": {
+			"Google Chrome", "Chrome",
+			"Microsoft Edge", "Edge",
+			"Brave Browser", "Brave",
+			"Opera",
+			"Vivaldi",
+			"Arc",
+			"Chromium",
+		},
+		"linux": {
+			"chrome", "google-chrome", "chromium", "chromium-browser",
+			"microsoft-edge", "msedge",
+			"brave", "brave-browser",
+			"opera", "opera-stable",
+			"vivaldi", "vivaldi-stable",
+			"arc",
+		},
+		"windows": {
+			"chrome.exe",
+			"msedge.exe",
+			"brave.exe",
+			"opera.exe", "launcher.exe",
+			"vivaldi.exe",
+			"arc.exe",
+		},
+	}
+
+	if names, ok := processNames[runtime.GOOS]; ok {
+		for _, name := range names {
+			switch runtime.GOOS {
+			case "darwin":
+				exec.Command("killall", "-9", name).Run()
+			case "linux":
+				exec.Command("pkill", "-9", "-f", name).Run()
+			case "windows":
+				exec.Command("taskkill", "/F", "/IM", name).Run()
+			}
+		}
 	}
 
 	time.Sleep(500 * time.Millisecond)
@@ -146,10 +178,6 @@ func (l *Launcher) buildArgs() []string {
 		"--window-size=1280,720",
 	}
 
-	if !l.config.Headed {
-		args = append(args, "--headless=new")
-	}
-
 	if l.config.IgnoreHTTPS {
 		args = append(args, "--ignore-certificate-errors")
 	}
@@ -174,11 +202,11 @@ func (l *Launcher) resolveExecPath() (string, error) {
 		return l.config.ExecutablePath, nil
 	}
 
-	if path := findSystemChrome(); path != "" {
+	if path := findSystemBrowser(); path != "" {
 		return path, nil
 	}
 
-	return "", fmt.Errorf("chrome not found, specify --executable-path")
+	return "", fmt.Errorf("no CDP-compatible browser found (Chrome, Edge, Brave, Opera, Vivaldi, Chromium), specify --executable-path")
 }
 
 func (l *Launcher) waitForCDPFromPort(ctx context.Context, port int) (string, error) {
@@ -196,63 +224,198 @@ func (l *Launcher) waitForCDPFromPort(ctx context.Context, port int) (string, er
 
 		select {
 		case <-ctx.Done():
-			return "", fmt.Errorf("timed out waiting for chrome CDP")
+			return "", fmt.Errorf("timed out waiting for browser CDP")
 		case <-ticker.C:
 		}
 	}
 }
 
-func findSystemChrome() string {
-	switch runtime.GOOS {
-	case "darwin":
-		paths := []string{
-			"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-			"/Applications/Chromium.app/Contents/MacOS/Chromium",
-		}
-		for _, p := range paths {
-			if _, err := os.Stat(p); err == nil {
-				return p
-			}
-		}
-	case "linux":
-		paths := []string{
-			"/usr/bin/google-chrome",
-			"/usr/bin/google-chrome-stable",
-			"/usr/bin/chromium-browser",
-			"/usr/bin/chromium",
-			"/snap/bin/chromium",
-		}
-		for _, p := range paths {
-			if _, err := os.Stat(p); err == nil {
-				return p
-			}
-		}
-	case "windows":
-		paths := []string{
-			filepath.Join(os.Getenv("PROGRAMFILES"), "Google/Chrome/Application/chrome.exe"),
-			filepath.Join(os.Getenv("PROGRAMFILES(X86)"), "Google/Chrome/Application/chrome.exe"),
-			filepath.Join(os.Getenv("LOCALAPPDATA"), "Google/Chrome/Application/chrome.exe"),
-		}
-		for _, p := range paths {
-			if _, err := os.Stat(p); err == nil {
-				return p
-			}
-		}
-	}
+// BrowserInfo holds information about a detected browser
+type BrowserInfo struct {
+	Name string
+	Path string
+}
 
-	if path, err := exec.LookPath("google-chrome"); err == nil {
-		return path
-	}
-	if path, err := exec.LookPath("chrome"); err == nil {
-		return path
-	}
-	if path, err := exec.LookPath("chromium-browser"); err == nil {
-		return path
-	}
-	if path, err := exec.LookPath("chromium"); err == nil {
-		return path
-	}
+// wellKnownBrowsers defines the list of CDP-compatible browsers to search for
+var wellKnownBrowsers = []struct {
+	name string
+	paths map[string][]string // os -> paths
+	execNames []string        // executable names for LookPath
+}{
+	{
+		name: "Google Chrome",
+		paths: map[string][]string{
+			"darwin": {
+				"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+			},
+			"linux": {
+				"/usr/bin/google-chrome",
+				"/usr/bin/google-chrome-stable",
+			},
+			"windows": {
+				"Google/Chrome/Application/chrome.exe",
+			},
+		},
+		execNames: []string{"google-chrome", "chrome"},
+	},
+	{
+		name: "Microsoft Edge",
+		paths: map[string][]string{
+			"darwin": {
+				"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+			},
+			"linux": {
+				"/usr/bin/microsoft-edge",
+				"/usr/bin/microsoft-edge-stable",
+			},
+			"windows": {
+				"Microsoft/Edge/Application/msedge.exe",
+			},
+		},
+		execNames: []string{"microsoft-edge", "msedge"},
+	},
+	{
+		name: "Brave Browser",
+		paths: map[string][]string{
+			"darwin": {
+				"/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+			},
+			"linux": {
+				"/usr/bin/brave-browser",
+				"/usr/bin/brave",
+				"/snap/bin/brave",
+			},
+			"windows": {
+				"BraveSoftware/Brave-Browser/Application/brave.exe",
+			},
+		},
+		execNames: []string{"brave-browser", "brave"},
+	},
+	{
+		name: "Opera",
+		paths: map[string][]string{
+			"darwin": {
+				"/Applications/Opera.app/Contents/MacOS/Opera",
+			},
+			"linux": {
+				"/usr/bin/opera",
+				"/usr/bin/opera-stable",
+				"/snap/bin/opera",
+			},
+			"windows": {
+				"Opera/launcher.exe",
+				"Programs/Opera/launcher.exe",
+			},
+		},
+		execNames: []string{"opera", "opera-stable"},
+	},
+	{
+		name: "Vivaldi",
+		paths: map[string][]string{
+			"darwin": {
+				"/Applications/Vivaldi.app/Contents/MacOS/Vivaldi",
+			},
+			"linux": {
+				"/usr/bin/vivaldi",
+				"/usr/bin/vivaldi-stable",
+			},
+			"windows": {
+				"Vivaldi/Application/vivaldi.exe",
+			},
+		},
+		execNames: []string{"vivaldi", "vivaldi-stable"},
+	},
+	{
+		name: "Chromium",
+		paths: map[string][]string{
+			"darwin": {
+				"/Applications/Chromium.app/Contents/MacOS/Chromium",
+			},
+			"linux": {
+				"/usr/bin/chromium-browser",
+				"/usr/bin/chromium",
+				"/snap/bin/chromium",
+			},
+			"windows": {
+				"Chromium/Application/chrome.exe",
+			},
+		},
+		execNames: []string{"chromium-browser", "chromium"},
+	},
+	{
+		name: "Arc",
+		paths: map[string][]string{
+			"darwin": {
+				"/Applications/Arc.app/Contents/MacOS/Arc",
+			},
+		},
+		execNames: []string{"arc"},
+	},
+	{
+		name: "Firefox (with remote debugging)",
+		paths: map[string][]string{
+			"darwin": {
+				"/Applications/Firefox.app/Contents/MacOS/firefox",
+			},
+			"linux": {
+				"/usr/bin/firefox",
+			},
+			"windows": {
+				"Mozilla Firefox/firefox.exe",
+			},
+		},
+		execNames: []string{"firefox"},
+	},
+}
 
+func findSystemBrowser() string {
+	if browser := findSystemBrowserByPaths(); browser != "" {
+		return browser
+	}
+	if browser := findSystemBrowserByLookPath(); browser != "" {
+		return browser
+	}
+	return ""
+}
+
+func findSystemBrowserByPaths() string {
+	for _, browser := range wellKnownBrowsers {
+		if paths, ok := browser.paths[runtime.GOOS]; ok {
+			for _, p := range paths {
+				// On Windows, prepend program directories
+				if runtime.GOOS == "windows" {
+					for _, baseDir := range []string{
+						os.Getenv("PROGRAMFILES"),
+						os.Getenv("PROGRAMFILES(X86)"),
+						os.Getenv("LOCALAPPDATA"),
+					} {
+						if baseDir == "" {
+							continue
+						}
+						fullPath := filepath.Join(baseDir, p)
+						if _, err := os.Stat(fullPath); err == nil {
+							return fullPath
+						}
+					}
+				} else {
+					if _, err := os.Stat(p); err == nil {
+						return p
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func findSystemBrowserByLookPath() string {
+	for _, browser := range wellKnownBrowsers {
+		for _, execName := range browser.execNames {
+			if path, err := exec.LookPath(execName); err == nil {
+				return path
+			}
+		}
+	}
 	return ""
 }
 

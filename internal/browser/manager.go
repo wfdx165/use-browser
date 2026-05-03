@@ -26,16 +26,16 @@ func (m *Manager) Start(ctx context.Context) error {
 		m.connector = NewConnector(m.config)
 		cdpURL, err := m.connector.Connect(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to connect to chrome: %w", err)
+			return fmt.Errorf("failed to connect to browser: %w", err)
 		}
 		m.cdpURL = cdpURL
 		return nil
 	}
 
 	if m.config.AutoConnect {
-		results, err := DiscoverChrome()
+		results, err := DiscoverBrowsers()
 		if err != nil || len(results) == 0 {
-			return fmt.Errorf("no running chrome found, start chrome with --remote-debugging-port or remove --auto-connect")
+			return fmt.Errorf("no running browser found, start browser with --remote-debugging-port or remove --auto-connect")
 		}
 
 		result := results[0]
@@ -51,7 +51,7 @@ func (m *Manager) Start(ctx context.Context) error {
 		return nil
 	}
 
-	results, err := DiscoverChrome()
+	results, err := DiscoverBrowsers()
 	if err == nil && len(results) > 0 {
 		result := results[0]
 		m.config.CDP = result.WebSocket
@@ -60,11 +60,11 @@ func (m *Manager) Start(ctx context.Context) error {
 		return nil
 	}
 
-	fmt.Fprintln(os.Stderr, "WARN: Could not find running Chrome with debugging port. Starting a new browser instance. To reuse your current Chrome, restart it with --remote-debugging-port=9222.")
+	fmt.Fprintln(os.Stderr, "WARN: Could not find running browser with debugging port. Starting a new browser instance. To reuse your current browser, restart it with --remote-debugging-port=9222.")
 
 	cdpURL, err := m.launcher.Launch(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to launch chrome: %w", err)
+		return fmt.Errorf("failed to launch browser: %w", err)
 	}
 	m.cdpURL = cdpURL
 	return nil

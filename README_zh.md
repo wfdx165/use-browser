@@ -2,7 +2,7 @@
 
 适用于 AI 代理的浏览器自动化工具，使用 Go 编写。
 
-通过 Chrome DevTools Protocol (CDP) 连接到现有的 Chrome 浏览器，或自动启动新浏览器。
+通过 Chrome DevTools Protocol (CDP) 连接到现有的浏览器，或自动启动新浏览器。支持 Chrome、Edge、Brave、Opera、Vivaldi、Chromium 和 Arc。
 
 ## 安装
 
@@ -20,8 +20,15 @@ go build -o use-browser ./cmd/browser
 
 ## 环境要求
 
-- Go 1.22+
-- Google Chrome 或 Chromium（自动从常见路径检测）
+- Go 1.26+
+- 任意支持 CDP 的浏览器（自动从常见路径检测）：
+  - Google Chrome
+  - Microsoft Edge
+  - Brave Browser
+  - Opera
+  - Vivaldi
+  - Chromium
+  - Arc (macOS)
 
 ## 快速开始
 
@@ -33,7 +40,7 @@ use-browser fill "#search" "hello"     # 填充输入框
 use-browser screenshot page.png        # 保存截图
 use-browser screenshot - | base64      # 截图输出二进制到标准输出
 use-browser tab new https://google.com # 打开新标签页
-use-browser console                    # 打开 DevTools 控制台（headed 模式）
+use-browser console                    # 打开 DevTools 控制台
 use-browser find role button click     # 通过语义定位器查找元素
 use-browser is visible "#submit"       # 检查元素状态
 use-browser keyboard type "hello"      # 无选择器直接输入
@@ -42,20 +49,20 @@ use-browser batch "open url" "click"   # 批量执行
 
 ## 浏览器持久化
 
-默认情况下，`use-browser` 在命令执行完毕后不会关闭 Chrome 实例。下次执行命令时会自动重连到同一个浏览器，而无需重新启动。Chrome 状态（PID 和 CDP URL）保存在 `~/.use-browser/pids/` 目录中。
+默认情况下，`use-browser` 在命令执行完毕后不会关闭浏览器实例。下次执行命令时会自动重连到同一个浏览器，而无需重新启动。浏览器状态（PID 和 CDP URL）保存在 `~/.use-browser/pids/` 目录中。
 
 ```bash
-# 首次运行：启动 Chrome
+# 首次运行：启动浏览器
 use-browser open https://example.com
 
-# 再次运行：自动重连到已运行的 Chrome
+# 再次运行：自动重连到已运行的浏览器
 use-browser snapshot
 
 # 手动关闭浏览器：
-killall "Google Chrome"
+killall "Google Chrome"  # 或其他浏览器名称
 ```
 
-每次新启动的 Chrome 实例都会使用临时用户数据目录（`/tmp/use-browser-*`），以避免配置文件锁定冲突。
+每次新启动的浏览器实例都会使用临时用户数据目录（`/tmp/use-browser-*`），以避免配置文件锁定冲突。
 
 ## 命令
 
@@ -155,34 +162,35 @@ killall "Google Chrome"
 | `batch "cmd1" "cmd2"` | 批量执行 |
 | `set viewport <w> <h>` | 设置视口 |
 | `set offline on\|off` | 切换离线模式 |
-| `console` | 在 headed 模式下按 F12 打开 DevTools 控制台 |
+| `console` | 按 F12 打开 DevTools 控制台 |
 
 ## 选项
 
+配置通过 **CLI 标志** 或 **环境变量** 完成（不支持配置文件）。
+
 | 标志 | 环境变量 | 说明 |
 |------|-----|-------------|
-| `--cdp <port\|url>` | `USE_BROWSER_CDP` | 通过 CDP 连接 |
-| `--auto-connect` | `USE_BROWSER_AUTO_CONNECT` | 自动发现 Chrome |
-| `--headed` | `USE_BROWSER_HEADED` | 显示浏览器窗口 |
-| `--executable-path` | `USE_BROWSER_EXECUTABLE_PATH` | 自定义 Chrome 路径 |
+| `--cdp <port\|url>` | `USE_BROWSER_CDP` | 通过 CDP 端口或 WebSocket URL 连接 |
+| `--auto-connect` | `USE_BROWSER_AUTO_CONNECT` | 自动发现运行中的浏览器 |
+| `--executable-path` | `USE_BROWSER_EXECUTABLE_PATH` | 自定义浏览器可执行文件路径 |
 | `--proxy` | `USE_BROWSER_PROXY` | 代理服务器 |
-| `--user-agent` | `USE_BROWSER_USER_AGENT` | 自定义 User Agent |
+| `--user-agent` | `USE_BROWSER_USER_AGENT` | 自定义 User-Agent |
 | `--json` | — | JSON 输出 |
-| `--config` | `USE_BROWSER_CONFIG` | 配置文件路径 |
 
-## 配置
+### 环境变量示例
 
-创建 `~/.use-browser/config.json` 或 `./use-browser.json`：
+```bash
+# 通过 CDP 连接到现有浏览器
+USE_BROWSER_CDP=9222 use-browser open https://example.com
 
-```json
-{
-  "headed": true,
-  "executablePath": "/path/to/chrome",
-  "proxy": "http://localhost:8080"
-}
+# 使用特定浏览器
+USE_BROWSER_EXECUTABLE_PATH=/usr/bin/brave use-browser open https://example.com
+
+# 多个选项
+USE_BROWSER_CDP=9222 USE_BROWSER_PROXY=http://localhost:8080 use-browser open https://example.com
 ```
 
-优先级：CLI 标志 > 环境变量 > 项目配置 > 用户配置 > 默认值。
+优先级：CLI 标志 > 环境变量 > 默认值
 
 ## 许可证
 

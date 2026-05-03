@@ -1,5 +1,6 @@
 # Binaries
 use-browser
+AGENTS.md
 *.exe
 
 # Test output
