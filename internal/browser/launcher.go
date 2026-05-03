@@ -4,11 +4,11 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"net"
-	"net/http"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -18,12 +18,12 @@ import (
 )
 
 type Launcher struct {
-	config  *config.Config
-	cmd     *exec.Cmd
-	cdpPort int
-	tempDir string
-	pidFile string
-	mu      sync.Mutex
+	config   *config.Config
+	cmd      *exec.Cmd
+	cdpURL   string
+	tempDir  string
+	pidFile  string
+	mu       sync.Mutex
 }
 
 func NewLauncher(cfg *config.Config) *Launcher {
@@ -35,12 +35,6 @@ func NewLauncher(cfg *config.Config) *Launcher {
 func (l *Launcher) Launch(ctx context.Context) (cdpURL string, err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-
-	port, err := l.findFreePort()
-	if err != nil {
-		return "", fmt.Errorf("failed to find free port: %w", err)
-	}
-	l.cdpPort = port
 
 	if l.config.Session != "" {
 		l.tempDir = filepath.Join(config.DefaultConfigDir(), "tmp", l.config.Session)
@@ -59,8 +53,11 @@ func (l *Launcher) Launch(ctx context.Context) (cdpURL string, err error) {
 	}
 
 	l.cmd = exec.CommandContext(ctx, execPath, args...)
-	l.cmd.Stdout = nil
-	l.cmd.Stderr = nil
+
+	stderrPipe, err := l.cmd.StderrPipe()
+	if err != nil {
+		return "", fmt.Errorf("failed to create stderr pipe: %w", err)
+	}
 
 	if err := l.cmd.Start(); err != nil {
 		return "", fmt.Errorf("failed to start chrome: %w", err)
@@ -73,12 +70,13 @@ func (l *Launcher) Launch(ctx context.Context) (cdpURL string, err error) {
 		os.WriteFile(l.pidFile, []byte(fmt.Sprintf("%d", l.cmd.Process.Pid)), 0644)
 	}
 
-	cdpURL, err = l.waitForCDP(ctx, port)
+	cdpURL, err = l.waitForCDPFromStderr(ctx, stderrPipe)
 	if err != nil {
 		l.cmd.Process.Kill()
 		return "", err
 	}
 
+	l.cdpURL = cdpURL
 	return cdpURL, nil
 }
 
@@ -119,12 +117,12 @@ func (l *Launcher) PID() int {
 }
 
 func (l *Launcher) CDPURL() string {
-	return fmt.Sprintf("ws://127.0.0.1:%d", l.cdpPort)
+	return l.cdpURL
 }
 
 func (l *Launcher) buildArgs() []string {
 	args := []string{
-		fmt.Sprintf("--remote-debugging-port=%d", l.cdpPort),
+		"--remote-debugging-port=0",
 		"--disable-background-tab-crashing",
 		"--disable-default-apps",
 		"--disable-extensions",
@@ -176,64 +174,34 @@ func (l *Launcher) resolveExecPath() (string, error) {
 	return "", fmt.Errorf("chrome not found, specify --executable-path")
 }
 
-func (la *Launcher) findFreePort() (int, error) {
-	addr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
-	}
+var wsURLPattern = regexp.MustCompile(`ws://[^\s]+`)
 
-	listener, err := net.ListenTCP("tcp", addr)
-	if err != nil {
-		return 0, err
-	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	listener.Close()
-
-	return port, nil
-}
-
-func (l *Launcher) waitForCDP(ctx context.Context, port int) (string, error) {
+func (l *Launcher) waitForCDPFromStderr(ctx context.Context, stderrPipe io.ReadCloser) (string, error) {
 	timeout := time.Duration(l.config.DefaultTimeout) * time.Millisecond
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	ticker := time.NewTicker(50 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return "", fmt.Errorf("timed out waiting for chrome CDP on port %d", port)
-		case <-ticker.C:
-			url := l.tryGetWSURL(port)
-			if url != "" {
-				return url, nil
-			}
-		}
-	}
-}
-
-func (l *Launcher) tryGetWSURL(port int) string {
-	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/json/version", port))
-	if err != nil {
-		return ""
-	}
-	defer resp.Body.Close()
-
-	scanner := bufio.NewScanner(resp.Body)
+	scanner := bufio.NewScanner(stderrPipe)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.Contains(line, "webSocketDebuggerUrl") {
-			parts := strings.Split(line, `"webSocketDebuggerUrl":"`)
-			if len(parts) > 1 {
-				url := strings.Split(parts[1], `"`)
-				if len(url) > 0 {
-					return url[0]
-				}
+		if strings.Contains(line, "DevTools listening on") {
+			urls := wsURLPattern.FindAllString(line, -1)
+			if len(urls) > 0 {
+				return urls[0], nil
 			}
 		}
 	}
-	return ""
+
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("error reading chrome stderr: %w", err)
+	}
+
+	select {
+	case <-ctx.Done():
+		return "", fmt.Errorf("timed out waiting for chrome CDP")
+	default:
+		return "", fmt.Errorf("chrome closed without providing CDP URL")
+	}
 }
 
 func findSystemChrome() string {

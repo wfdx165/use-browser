@@ -1,7 +1,6 @@
 package browser
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"

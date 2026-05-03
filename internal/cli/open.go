@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -40,14 +39,12 @@ func init() {
 }
 
 func runOpen(cmd *cobra.Command, args []string) error {
-	ctx := SignalContext(context.Background())
-
 	if cfg == nil {
 		return fmt.Errorf("config not initialized")
 	}
 
 	manager := browser.NewManager(cfg)
-	if err := manager.Start(ctx); err != nil {
+	if err := manager.Start(cmd.Context()); err != nil {
 		return err
 	}
 	defer manager.Close()
@@ -58,12 +55,10 @@ func runOpen(cmd *cobra.Command, args []string) error {
 	}
 	defer client.Close()
 
-	timeout := cfg.DefaultTimeout
+	timeout := time.Duration(cfg.DefaultTimeout) * time.Millisecond
 	if openTimeout > 0 {
-		timeout = openTimeout
+		timeout = time.Duration(openTimeout) * time.Millisecond
 	}
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Millisecond)
-	defer cancel()
 
 	url := ""
 	if len(args) > 0 {
@@ -97,12 +92,12 @@ func runOpen(cmd *cobra.Command, args []string) error {
 	case "domcontentloaded":
 		tasks = append(tasks, chromedp.WaitReady("body", chromedp.ByQuery))
 	case "networkidle":
-		tasks = append(tasks, chromedp.WaitIdle())
+		tasks = append(tasks, chromedp.WaitVisible("body"))
 	}
 
 	tasks = append(tasks, chromedp.Title(&title))
 
-	if err := client.Run(ctx, tasks...); err != nil {
+	if err := client.Run(timeout, tasks...); err != nil {
 		return fmt.Errorf("navigation failed: %w", err)
 	}
 
