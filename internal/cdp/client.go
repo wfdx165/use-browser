@@ -46,7 +46,12 @@ func (c *Client) Close() error {
 	return nil
 }
 
+var DefaultRunTimeout = 30 * time.Second
+
 func (c *Client) Run(timeout time.Duration, tasks ...chromedp.Action) error {
+	if timeout <= 0 {
+		timeout = DefaultRunTimeout
+	}
 	taskCtx, cancel := context.WithTimeout(c.browserCtx, timeout)
 	defer cancel()
 
