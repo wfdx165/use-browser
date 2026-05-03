@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,39 +50,51 @@ func Load(configPath string) (*Config, error) {
 	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	v.AutomaticEnv()
 
-	v.SetDefault("headed", true)
-	v.SetDefault("autoConnect", false)
-	v.SetDefault("ignoreHttpsErrors", false)
-	v.SetDefault("allowFileAccess", false)
-	v.SetDefault("screenshotFormat", "png")
-	v.SetDefault("screenshotQuality", 100)
-	v.SetDefault("annotate", false)
-	v.SetDefault("json", false)
-	v.SetDefault("verbose", false)
-	v.SetDefault("debug", false)
-	v.SetDefault("defaultTimeout", 25000)
-	v.SetDefault("maxOutput", 50000)
-	v.SetDefault("noAutoDialog", false)
-	v.SetDefault("contentBoundaries", false)
+	// Note: Config file loading is disabled. Use environment variables only.
+	// Example: USE_BROWSER_CDP=9222 use-browser open https://example.com
 
-	if configPath != "" {
-		v.SetConfigFile(configPath)
-	} else {
-		userConfigDir := DefaultConfigDir()
-		v.AddConfigPath(userConfigDir)
-		v.SetConfigName("config")
-
-		wd, _ := os.Getwd()
-		v.AddConfigPath(wd)
-		v.SetConfigName("use-browser")
+	cfg := &Config{
+		Headed:             v.GetBool("headed"),
+		CDP:                v.GetString("cdp"),
+		AutoConnect:        v.GetBool("autoConnect"),
+		ExecutablePath:     v.GetString("executablePath"),
+		State:              v.GetString("state"),
+		Proxy:              v.GetString("proxy"),
+		ProxyBypass:        v.GetString("proxyBypass"),
+		IgnoreHTTPS:        v.GetBool("ignoreHttpsErrors"),
+		AllowFileAccess:    v.GetBool("allowFileAccess"),
+		UserAgent:          v.GetString("userAgent"),
+		ColorScheme:        v.GetString("colorScheme"),
+		DownloadPath:       v.GetString("downloadPath"),
+		ScreenshotDir:      v.GetString("screenshotDir"),
+		ScreenshotFormat:   v.GetString("screenshotFormat"),
+		ScreenshotQuality:  v.GetInt("screenshotQuality"),
+		Annotate:           v.GetBool("annotate"),
+		JSON:               v.GetBool("json"),
+		Verbose:            v.GetBool("verbose"),
+		Debug:              v.GetBool("debug"),
+		DefaultTimeout:     v.GetInt("defaultTimeout"),
+		AllowedDomains:     v.GetString("allowedDomains"),
+		MaxOutput:          v.GetInt("maxOutput"),
+		NoAutoDialog:       v.GetBool("noAutoDialog"),
+		ContentBoundaries:  v.GetBool("contentBoundaries"),
 	}
 
-	_ = v.ReadInConfig()
-
-	cfg := &Config{}
-	if err := v.Unmarshal(cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	// Set defaults if not provided via env
+	if cfg.DefaultTimeout == 0 {
+		cfg.DefaultTimeout = 25000
 	}
+	if cfg.ScreenshotFormat == "" {
+		cfg.ScreenshotFormat = "png"
+	}
+	if cfg.ScreenshotQuality == 0 {
+		cfg.ScreenshotQuality = 100
+	}
+	if cfg.MaxOutput == 0 {
+		cfg.MaxOutput = 50000
+	}
+	// Always headed (no headless mode)
+	cfg.Headed = true
 
 	return cfg, nil
 }

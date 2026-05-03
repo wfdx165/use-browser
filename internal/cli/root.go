@@ -17,8 +17,10 @@ var rootCmd = &cobra.Command{
 	Short: "Browser automation CLI for AI agents",
 	Long: `use-browser is a browser automation CLI for AI agents.
 
-It connects to an existing Chrome browser via Chrome DevTools Protocol (CDP)
-or launches a new Chrome instance automatically.
+It connects to an existing browser via Chrome DevTools Protocol (CDP)
+or launches a new browser instance automatically.
+
+Supported browsers: Google Chrome, Microsoft Edge, Brave, Opera, Vivaldi, Chromium, Arc
 
 Examples:
   use-browser open https://example.com
@@ -38,7 +40,8 @@ var cfg *config.Config
 func applyFlagOverrides(cmd *cobra.Command, args []string) error {
 	if cfg == nil {
 		var err error
-		cfg, err = config.Load(cfgConfigPath)
+		// Config file is disabled. Use environment variables or CLI flags.
+		cfg, err = config.Load("")
 		if err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
 		}
@@ -49,12 +52,6 @@ func applyFlagOverrides(cmd *cobra.Command, args []string) error {
 	}
 	if cfgAutoConnect {
 		cfg.AutoConnect = cfgAutoConnect
-	}
-	if cfgHeadless {
-		cfg.Headed = false
-	}
-	if cfgHeaded {
-		cfg.Headed = cfgHeaded
 	}
 	if cfgExecutablePath != "" {
 		cfg.ExecutablePath = cfgExecutablePath
@@ -107,10 +104,8 @@ func applyFlagOverrides(cmd *cobra.Command, args []string) error {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgCDP, "cdp", "", "CDP port or WebSocket URL")
-	rootCmd.PersistentFlags().BoolVar(&cfgAutoConnect, "auto-connect", false, "Auto-discover running Chrome")
-	rootCmd.PersistentFlags().BoolVar(&cfgHeaded, "headed", false, "Show browser window (default: true)")
-	rootCmd.PersistentFlags().BoolVar(&cfgHeadless, "headless", false, "Run browser in headless mode")
-	rootCmd.PersistentFlags().StringVar(&cfgExecutablePath, "executable-path", "", "Custom Chrome executable path")
+	rootCmd.PersistentFlags().BoolVar(&cfgAutoConnect, "auto-connect", false, "Auto-discover running browser")
+	rootCmd.PersistentFlags().StringVar(&cfgExecutablePath, "executable-path", "", "Custom browser executable path")
 	rootCmd.PersistentFlags().StringVar(&cfgState, "state", "", "Load storage state from JSON file")
 	rootCmd.PersistentFlags().StringVar(&cfgProxy, "proxy", "", "Proxy server URL")
 	rootCmd.PersistentFlags().BoolVar(&cfgIgnoreHTTPS, "ignore-https-errors", false, "Ignore HTTPS certificate errors")
@@ -124,7 +119,6 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&cfgAnnotate, "annotate", false, "Annotated screenshot with numbered labels")
 	rootCmd.PersistentFlags().BoolVar(&cfgJSON, "json", false, "JSON output")
 	rootCmd.PersistentFlags().BoolVarP(&cfgVerbose, "verbose", "v", false, "Verbose output")
-	rootCmd.PersistentFlags().StringVar(&cfgConfigPath, "config", "", "Custom config file path")
 	rootCmd.PersistentFlags().BoolVar(&cfgDebug, "debug", false, "Debug output")
 
 	rootCmd.AddCommand(versionCmd)
@@ -133,8 +127,6 @@ func init() {
 var (
 	cfgCDP              string
 	cfgAutoConnect      bool
-	cfgHeaded           bool
-	cfgHeadless         bool
 	cfgExecutablePath   string
 	cfgState            string
 	cfgProxy            string
@@ -150,7 +142,6 @@ var (
 	cfgJSON             bool
 	cfgVerbose          bool
 	cfgDebug            bool
-	cfgConfigPath       string
 )
 
 var versionCmd = &cobra.Command{
